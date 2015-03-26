@@ -20,6 +20,7 @@
 
 #include "abstractobjecttool.h"
 
+#include "changeproperties.h"
 #include "map.h"
 #include "mapdocument.h"
 #include "mapobject.h"
@@ -32,10 +33,16 @@
 
 #include <QKeyEvent>
 #include <QMenu>
+#include <QString>
+#include <QShortcut >
 #include <QUndoStack>
-
+#include <QSignalMapper>
 #include <cmath>
-
+#include <QCoreApplication>
+#include <QFile>
+#include <QXmlStreamReader>
+#include <QXmlStreamWriter>
+#include <iostream>
 using namespace Tiled;
 using namespace Tiled::Internal;
 
@@ -154,6 +161,28 @@ void AbstractObjectTool::lowerToBottom()
     RaiseLowerHelper(mMapScene).lowerToBottom();
 }
 
+void AbstractObjectTool::addProperty(int propertyId)
+{
+    Object *object = mapDocument()->currentObject();
+    if (!object)
+        return;
+
+    QUndoStack *undoStack = mapDocument()->undoStack();
+    undoStack->push(new SetProperty(mapDocument(), mapDocument()->currentObjects(), mCustomProperties[propertyId].name, mCustomProperties[propertyId].value));
+
+}
+void AbstractObjectTool::applyTemplate(int templateId)
+{
+    Object *object = mapDocument()->currentObject();
+    if (!object)
+        return;
+
+    QUndoStack *undoStack = mapDocument()->undoStack();
+    undoStack->push(new ApplyTemplate(mapDocument(), mapDocument()->currentObjects(), mCustomTemplates[templateId]));
+
+}
+
+
 /**
  * Shows the context menu for map objects. The menu allows you to duplicate and
  * remove the map objects, or to edit their properties.
@@ -183,6 +212,115 @@ void AbstractObjectTool::showContextMenu(MapObjectItem *clickedObjectItem,
     removeAction->setIcon(QIcon(QLatin1String(":/images/16x16/edit-delete.png")));
 
     menu.addSeparator();
+
+    /* Add Custom Properties */
+    QMenu *parentMenu = NULL;
+
+    QMenu *addCustomPropertyMenu = menu.addMenu(tr("Add custom property"));
+    parentMenu = addCustomPropertyMenu;
+    QMenu *propertyMenu = NULL;
+    QString propertyName;
+    QString customPropertiesFileName = QLatin1String("customProperties.xml");
+    QFile propertiesFile(customPropertiesFileName);
+
+	if (!(!propertiesFile.open(QIODevice::ReadOnly | QIODevice::Text))) {
+
+	    QXmlStreamReader reader(&propertiesFile);
+
+	    while (!reader.atEnd() && !reader.hasError()) {
+
+	    	reader.readNext();
+
+			const QXmlStreamAttributes atts = reader.attributes();
+
+	    	if(reader.name().compare(QLatin1String("menu")) == 0){
+	    		if(reader.isStartElement()){
+	    			parentMenu = parentMenu->addMenu(atts.value(QLatin1String("name")).toString());
+	    		}else if(reader.isEndElement()){
+	    			parentMenu = (QMenu*) parentMenu->parent();
+	    		}
+	    	}else if(reader.name().compare(QLatin1String("property")) == 0){
+	    		if(reader.isStartElement()){
+	    			propertyMenu = parentMenu->addMenu(atts.value(QLatin1String("name")).toString());
+	    			propertyName = atts.value(QLatin1String("name")).toString();
+	    		}else if(reader.isEndElement()){
+	    			propertyMenu = NULL;
+	    		}
+	    	}else if(reader.name().compare(QLatin1String("value")) == 0){
+	    		if(reader.isStartElement() && (propertyMenu != NULL)){
+	    			Property prop;
+	    			prop.value = reader.readElementText();
+	    	    	prop.name = propertyName;
+	    			QSignalMapper *signalMapper = new QSignalMapper(propertyMenu);
+	    			QAction *action = propertyMenu->addAction(prop.value, signalMapper, SLOT(map()));
+	    			mCustomProperties.append(prop);
+	    			int propertyId = mCustomProperties.size()-1;
+	    			signalMapper->setMapping(action, propertyId);
+	    			connect(signalMapper, SIGNAL(mapped(const int)), this, SLOT(addProperty(const int)));
+	    		}
+	    	}
+	    }
+	    reader.clear();
+	}else{
+		std::cout << "Can't open " << customPropertiesFileName.toStdString() << std::endl;
+	}
+
+
+    /* Apply Custom Templates */
+	QMenu *applyCustomTemplateMenu = menu.addMenu(tr("Apply custom template"));
+    parentMenu = applyCustomTemplateMenu;
+    QList<QString> propertyList;
+    QString templateName;
+    QString customTemplatesFileName = QLatin1String("customTemplates.xml");
+    QFile templateFile(customTemplatesFileName);
+    QVector<Property> currentTemplate;
+
+	if (!(!templateFile.open(QIODevice::ReadOnly | QIODevice::Text))) {
+
+	    QXmlStreamReader reader(&templateFile);
+
+	    while (!reader.atEnd() && !reader.hasError()) {
+
+	    	reader.readNext();
+
+			const QXmlStreamAttributes atts = reader.attributes();
+
+	    	if(reader.name().compare(QLatin1String("menu")) == 0){
+	    		if(reader.isStartElement()){
+	    			parentMenu = parentMenu->addMenu(atts.value(QLatin1String("name")).toString());
+	    		}else if(reader.isEndElement()){
+	    			parentMenu = (QMenu*) parentMenu->parent();
+	    		}
+	    	}else if(reader.name().compare(QLatin1String("template")) == 0){
+	    		if(reader.isStartElement()){
+	    			templateName = atts.value(QLatin1String("name")).toString();
+	    		}else if(reader.isEndElement()){
+	    			QSignalMapper *signalMapper = new QSignalMapper(parentMenu);
+	    			QAction *action;
+	    			action = parentMenu->addAction(templateName, signalMapper, SLOT(map()));
+	    			mCustomTemplates.append(currentTemplate);
+	    			int templateId = mCustomTemplates.size()-1;
+	    			signalMapper->setMapping(action, templateId);
+	    			connect(signalMapper, SIGNAL(mapped(const int)), this, SLOT(applyTemplate(const int)));
+	    			currentTemplate.clear();
+	    			templateName.clear();
+	    		}
+	    	}else if(reader.name().compare(QLatin1String("property")) == 0){
+	    		if(reader.isStartElement()){
+	    			Property prop;
+	    			prop.name = atts.value(QLatin1String("name")).toString();
+	    			prop.value = reader.readElementText();
+	    			currentTemplate.append(prop);
+	    		}
+	    	}
+	    }
+	    reader.clear();
+	}else{
+		std::cout << "Can't open " << customTemplatesFileName.toStdString() << std::endl;
+	}
+
+    menu.addSeparator();
+
     menu.addAction(tr("Flip Horizontally"), this, SLOT(flipHorizontally()), QKeySequence(tr("X")));
     menu.addAction(tr("Flip Vertically"), this, SLOT(flipVertically()), QKeySequence(tr("Y")));
 

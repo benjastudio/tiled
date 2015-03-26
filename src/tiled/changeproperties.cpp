@@ -149,3 +149,50 @@ RenameProperty::RenameProperty(MapDocument *mapDocument,
         new SetProperty(mapDocument, objects, newName, value, this);
     }
 }
+
+
+
+ApplyTemplate::ApplyTemplate(MapDocument *mapDocument,
+                         const QList<Object*> &objects,
+                         const QVector<AbstractObjectTool::Property> &properties,
+                         QUndoCommand *parent)
+	: QUndoCommand(parent)
+	, mMapDocument(mapDocument)
+	, mObjects(objects)
+	, mProperties(properties)
+{
+
+    foreach (Object *obj, mObjects) {
+    	QVector<ObjectProperty> objectProperties;
+	    for (int j = 0; j < mProperties.size(); ++j){
+			ObjectProperty prop;
+			prop.existed = obj->hasProperty(mProperties[j].name);
+			prop.previousValue = obj->property(mProperties[j].name);
+			objectProperties.append(prop);
+    	}
+    	mPropertiesOfObjetcs.append(objectProperties);
+    }
+
+   setText(QCoreApplication::translate("Undo Commands", "Apply Template"));
+}
+
+void ApplyTemplate::undo()
+{
+    for (int i = 0; i < mObjects.size(); ++i) {
+    	for (int j = 0; j < mProperties.size(); ++j){
+			if (mPropertiesOfObjetcs[i][j].existed)
+				mMapDocument->setProperty(mObjects[i], mProperties[j].name, mPropertiesOfObjetcs[i][j].previousValue);
+			else
+				mMapDocument->removeProperty(mObjects[i], mProperties[j].name);
+    	}
+    }
+}
+
+void ApplyTemplate::redo()
+{
+    foreach (Object *obj, mObjects){
+    	for (int j = 0; j < mProperties.size(); ++j){
+    		mMapDocument->setProperty(obj, mProperties[j].name, mProperties[j].value);
+    	}
+    }
+}

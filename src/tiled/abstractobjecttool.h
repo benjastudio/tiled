@@ -80,11 +80,23 @@ private slots:
     void raiseToTop();
     void lowerToBottom();
 
+public slots:
+	void addProperty(const int);
+	void applyTemplate(const int);
+
+public:
+    struct Property {
+        QString name;
+        QString value;
+    };
+
 private:
     void showContextMenu(MapObjectItem *clickedObject,
                          QPoint screenPos);
 
     MapScene *mMapScene;
+	QVector<QVector<Property> > mCustomTemplates;
+	QVector<Property> mCustomProperties;
 };
 
 } // namespace Internal

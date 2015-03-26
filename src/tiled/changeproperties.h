@@ -23,6 +23,8 @@
 
 #include "object.h"
 
+#include "abstracttool.h"
+
 #include <QString>
 #include <QUndoCommand>
 #include <QVector>
@@ -130,6 +132,27 @@ public:
                    const QList<Object*> &objects,
                    const QString &oldName,
                    const QString &newName);
+};
+
+class ApplyTemplate : public QUndoCommand
+{
+public:
+    ApplyTemplate(MapDocument *mapDocument,
+                const QList<Object*> &objects,
+                const QVector<AbstractObjectTool::Property> &properties,
+                QUndoCommand *parent = 0);
+    void undo();
+    void redo();
+
+private:
+    struct ObjectProperty {
+        QString previousValue;
+        bool existed;
+    };
+    QVector<QVector<ObjectProperty> > mPropertiesOfObjetcs;
+    MapDocument *mMapDocument;
+    QList<Object*> mObjects;
+    QVector<AbstractObjectTool::Property> mProperties;
 };
 
 } // namespace Internal
